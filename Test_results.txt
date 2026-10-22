@@ -1,0 +1,121 @@
+=====================================================================
+TEST RESULTS - Customer Lifetime Value and Churn Intelligence System
+Dataset: IBM Telco Customer Churn (7,043 customers, stored in PostgreSQL)
+All numbers below come from actual runs of the scripts in this project.
+=====================================================================
+
+1. DATA LOADING (load_to_postgres.py)
+---------------------------------------------------------------------
+Database : churn_db
+Table    : telco_customers
+Rows loaded into PostgreSQL: 7043
+
+
+2. CHURN CLASSIFIER - LightGBM (churn_model.py)
+---------------------------------------------------------------------
+Split: 80% train / 20% test (stratified, random_state=42)
+Test set size: 1,409 customers (1,035 stayed, 374 churned)
+
+AUC       : 0.852
+Precision : 0.654   (class 1 = churn)
+Recall    : 0.527   (class 1 = churn)
+
+Classification report (test set, cutoff 0.5):
+              precision    recall  f1-score   support
+           0       0.84      0.90      0.87      1035
+           1       0.65      0.53      0.58       374
+    accuracy                           0.80      1409
+   macro avg       0.75      0.71      0.73      1409
+weighted avg       0.79      0.80      0.79      1409
+
+Notes:
+- Churn Score, Churn Reason and CLTV columns were EXCLUDED from the
+  features to avoid data leakage.
+- SHAP summary plot saved in outputs/shap_summary.png.
+- Recall can be raised by lowering the 0.5 cutoff, at the cost of more
+  false alarms.
+
+
+3. SURVIVAL ANALYSIS - Lifelines (survival_model.py)
+---------------------------------------------------------------------
+Duration = tenure_months, Event = churn_value
+Observations: 7043   Events observed: 1869   Right-censored: 5174
+
+Cox model concordance index: 0.826
+
+Hazard ratios (Cox model):
+  monthly_charges    0.98   (significant, p < 0.005)
+  senior_citizen     0.96   (NOT significant, p = 0.46)
+  paperless_billing  1.22   (significant, p < 0.005)
+  fiber_optic        3.15   (significant, p < 0.005)
+  no_internet        0.38   (significant, p < 0.005)
+  one_year contract  0.17   (significant, p < 0.005)
+  two_year contract  0.05   (significant, p < 0.005)
+
+Kaplan-Meier curves by contract type saved in outputs/km_by_contract.png.
+Expected lifetime per customer saved in outputs/expected_lifetime.csv
+(sum of predicted survival probability over 72 months).
+
+
+4. UPLIFT MODEL - T-learner built with LightGBM (uplift_model.py)
+---------------------------------------------------------------------
+IMPORTANT: The retention offer and the customer response are SIMULATED,
+because the Telco dataset has no real offer data. These results show that
+the method can find customers who respond to an offer. They do not prove
+that a real offer would perform this well.
+
+CausalML could not be installed on Windows (it needs Microsoft C++ Build
+Tools), so the T-learner (the same method CausalML implements) was built
+directly with two LightGBM models.
+
+Evaluation on held-out customers (30% test split):
+
+  group        treated_retention  control_retention  real_uplift
+  Top 20%            0.572              0.365           0.207
+  20-40%             0.647              0.677          -0.030
+  40-60%             0.904              0.893           0.011
+  60-80%             0.964              0.938           0.027
+  Bottom 20%         0.854              0.829           0.025
+
+Reading: the offer raises retention by about 21 percentage points in the
+Top 20% group, and has almost no effect in the other groups. The -0.030
+value is within noise for groups of this size.
+
+
+5. CLV AND SEGMENTATION (final_table.py)
+---------------------------------------------------------------------
+CLV = monthly charges x expected lifetime months (capped at 72, from the
+Cox model). Customers are segmented with KMeans (4 clusters) using CLV,
+monthly charges, tenure and churn probability.
+
+Output file: outputs/customers_final.csv
+
+Segment profile (copy from the Segments tab of the app):
+  Cluster | Customers | Avg CLV | Avg monthly | Avg tenure | Avg churn risk
+  0       | 1173	  |2006.37	|34.22	      |52.96	   |0.05
+  1       |   1903	  |2709.12	|81.19	      |13.68	   |0.63
+  2       |2082	      |5665.5	|91.05	      |56.12	   |0.12
+3         |1885	      |1738.89	|38.15	      |12.2     |	0.18
+
+6. ROI SIMULATOR (Streamlit app.py)
+---------------------------------------------------------------------
+Settings: 20% of customers targeted, 10% discount, lasting 6 months.
+Offer response is simulated (see section 4).
+
+  Targeting strategy        Net benefit
+  Highest uplift            $1,140,296  (ROI 1,681%)
+  Highest churn risk        $907,734  (ROI 1,357%)
+  Random                    $295,598  (ROI539%)
+The Highest uplift strategy targets customers who respond to the offer,
+not only customers likely to leave.
+
+
+7. KNOWN LIMITATIONS
+---------------------------------------------------------------------
+- Offer and response are simulated (no real treatment data in Telco).
+- No complaints or usage-trend columns exist in this dataset, so features
+  are tenure, contract, services and charges, plus engineered
+  num_services and charge_vs_average.
+- The ROI numbers depend on assumptions: the simulated response, a linear
+  scaling of the uplift with discount size, and CLV capped at 72 months.
+- The classifier was evaluated on one train/test split.

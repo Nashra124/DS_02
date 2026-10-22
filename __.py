@@ -1,0 +1,10 @@
+import pandas as pd
+df = pd.read_csv(r"C:\Users\sulta\Desktop\DS_02\Telco_customer_churn.csv")
+print("Rows and columns:", df.shape)
+print("\nColumn names:")
+print(list(df.columns))
+print("\nTotal Charges type:", df["Total Charges"].dtype)
+blank = (df["Total Charges"].astype(str).str.strip() == "").sum()
+print("Blank Total Charges:", blank)
+print("\nChurn counts:")
+print(df["Churn Value"].value_counts())
